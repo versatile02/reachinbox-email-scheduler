@@ -4,14 +4,43 @@ import { closeEmailQueue } from './queues/email.queue.js';
 import { closeDatabasePool } from './config/database.js';
 import { closeRateLimiter } from './services/ratelimit.service.js';
 import { closeSlackService } from './services/slack.service.js';
+import { outboxService } from './services/outbox.service.js';
+import { elasticsearchService } from './services/elasticsearch.service.js';
 
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, async () => {
   console.log(`===============================================`);
   console.log(` ReachInbox Scheduler Backend Started Successfully `);
-  console.log(` Environment : ${config.env}`);
-  console.log(` Port        : ${config.port}`);
-  console.log(` Health Check: http://localhost:${config.port}/api/health`);
+  console.log(` Environment    : ${config.env}`);
+  console.log(` Port           : ${config.port}`);
+  console.log(` Health Check   : http://localhost:${config.port}/api/health`);
+  console.log(` Queue Dashboard: http://localhost:${config.port}/admin/queues`);
   console.log(`===============================================`);
+
+  // 0. Automatically apply database migrations on startup (idempotent)
+  try {
+    const { runMigrations } = await import('./models/migrate.js');
+    await runMigrations();
+  } catch (migErr: any) {
+    console.warn(`[Startup] Migration notice: ${migErr.message}`);
+  }
+
+  // 1. Initialize Elasticsearch (non-blocking)
+  elasticsearchService.initElasticsearch().catch((err: any) => {
+    console.warn(`[Startup] Elasticsearch notice: ${err.message}`);
+  });
+
+  // 2. Run Queue Reconciliation to recover from any Redis restart or data loss
+  try {
+    const recon = await outboxService.reconcileQueueWithDatabase();
+    if (recon.reconciled > 0) {
+      console.log(`[Startup] Reconciled ${recon.reconciled} scheduled email(s) into BullMQ.`);
+    }
+  } catch (reconErr: any) {
+    console.warn(`[Startup] Reconciliation notice: ${reconErr.message}`);
+  }
+
+  // 3. Start Transactional Outbox Background Publisher Loop
+  outboxService.startOutboxPublisher(5000);
 });
 
 let isShuttingDown = false;
@@ -26,6 +55,9 @@ export const handleShutdown = async (signal: string) => {
   }
   isShuttingDown = true;
   console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
+
+  // Stop outbox background publisher loop
+  outboxService.stopOutboxPublisher();
 
   let exitCode = 0;
 
@@ -47,7 +79,7 @@ export const handleShutdown = async (signal: string) => {
         resolve();
       });
 
-      // 2. Allow existing connections a brief grace period to finish, then force-close lingering keep-alives
+      // 2. Allow existing connections a brief grace period to finish
       setTimeout(() => {
         if (typeof (server as any).closeIdleConnections === 'function') {
           (server as any).closeIdleConnections();

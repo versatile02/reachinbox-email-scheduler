@@ -5,9 +5,11 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"fs.cpSync('src/models/schema.sql', 'dist/models/schema.sql')\"",
     "start": "node dist/server.js",
+    "start:all": "node dist/dev-all.js",
     "dev": "tsx watch src/server.ts",
+    "dev:all": "tsx src/dev-all.ts",
     "worker": "node dist/workers/email.worker.js",
     "worker:dev": "tsx src/workers/email.worker.ts",
     "db:migrate": "tsx src/models/migrate.ts",
@@ -23,21 +25,27 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@bull-board/api": "^9.14.0",
+    "@bull-board/express": "^9.14.0",
+    "@elastic/elasticsearch": "^9.5.1",
+    "@types/multer": "^2.3.0",
     "bullmq": "^6.7.8",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
     "ioredis": "^6.1.0",
+    "multer": "^2.5.0",
     "nodemailer": "^10.6.1",
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
-    "nodemon": "^3.1.14",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

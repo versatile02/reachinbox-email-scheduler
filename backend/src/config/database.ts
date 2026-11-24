@@ -46,7 +46,9 @@ export const poolConfig: pg.PoolConfig = process.env.DATABASE_URL
       ssl: sslConfig,
       max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
     }
   : {
       host: process.env.PGHOST || 'localhost',
@@ -57,7 +59,9 @@ export const poolConfig: pg.PoolConfig = process.env.DATABASE_URL
       ssl: sslConfig,
       max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
     };
 
 export const pool = new Pool(poolConfig);

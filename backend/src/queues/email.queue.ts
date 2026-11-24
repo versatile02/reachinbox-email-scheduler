@@ -46,6 +46,15 @@ export interface ScheduledEmailJobData {
   recipient: string;
   subject: string;
   body: string;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    originalName?: string;
+    mimeType?: string;
+    mimetype?: string;
+    size: number;
+    path: string;
+  }>;
   _heartbeatIntervalMs?: number;
 }
 

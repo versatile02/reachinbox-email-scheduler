@@ -9,6 +9,8 @@ import { mailerService } from '../services/mailer.service.js';
 import { ratelimitService } from '../services/ratelimit.service.js';
 import { slackService } from '../services/slack.service.js';
 import { closeDatabasePool } from '../config/database.js';
+import { elasticsearchService } from '../services/elasticsearch.service.js';
+import type { RateLimitReservation } from '../types/index.js';
 
 /**
  * Core job processor for scheduled email dispatch.
@@ -112,7 +114,7 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
     const minDelaySeconds = sender?.minDelaySeconds ?? config.rateLimit.defaultMinDelaySeconds;
 
     // 7. Atomic Rate Limit & Pacing Reservation via Redis Lua (with idempotent retry tracking)
-    let reservation: any;
+    let reservation: RateLimitReservation;
     try {
       reservation = await ratelimitService.reserveSendSlot(senderEmail, hourlyLimit, minDelaySeconds, emailId);
     } catch (rlErr: any) {
@@ -183,11 +185,21 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
     }
 
     // 9. Dispatch email via mailer service
+    const emailAttachments = (acquired.attachments || job.data?.attachments || [])
+      .filter((att: any) => att && (att.path || att.content))
+      .map((att: any) => ({
+        filename: att.filename,
+        path: att.path,
+        content: att.content,
+        contentType: att.mimetype || att.contentType,
+      }));
+
     const result = await mailerService.sendEmail({
       recipient: acquired.recipient,
       subject: acquired.subject,
       body: acquired.body,
       from: senderEmail,
+      attachments: emailAttachments,
     });
 
     if (leaseLost) {
@@ -227,6 +239,12 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
       throw new Error(`SMTP succeeded (${result.messageId}) but database update to 'sent' failed.`);
     }
 
+    elasticsearchService.indexEmail({
+      id: emailId,
+      status: EMAIL_STATUSES.SENT,
+      sentAt: new Date().toISOString(),
+    }).catch(() => {});
+
     console.log(`[Worker] Successfully sent email ${emailId} to ${acquired.recipient}`);
     if (result.previewUrl) {
       console.log(`[Worker] Ethereal Preview URL: ${result.previewUrl}`);
@@ -258,6 +276,10 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
           `Delivery failed after ${currentAttempt} attempts: ${err.message}`,
           claimToken
         );
+        elasticsearchService.indexEmail({
+          id: emailId,
+          status: EMAIL_STATUSES.FAILED,
+        }).catch(() => {});
         console.log(`[Worker] Email ${emailId} permanently marked as 'failed' after ${currentAttempt} attempts.`);
       } catch (dbErr: any) {
         console.error(`[Worker] Failed to update email ${emailId} status to 'failed':`, dbErr.message);

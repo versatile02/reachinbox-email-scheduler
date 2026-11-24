@@ -1,7 +1,9 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import type { Request, Response } from 'express';
-import { emailRepository, EMAIL_STATUSES } from '../models/email.repository.js';
+import { emailRepository, EMAIL_STATUSES, DEFAULT_USER_ID } from '../models/email.repository.js';
 import { emailQueueService } from '../queues/email.queue.js';
+import { elasticsearchService } from '../services/elasticsearch.service.js';
 import { config } from '../config/index.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -112,17 +114,32 @@ export const scheduleEmail = async (req: Request, res: Response): Promise<Respon
 
     const { id: requestedId, senderEmail, recipient, subject, body, scheduledAt, delayMs } = validation.sanitized;
     const emailId = requestedId || crypto.randomUUID();
+    const userId = req.user?.id || DEFAULT_USER_ID;
+
+    // Process uploaded attachments (from multipart/form-data via multer)
+    const uploadedFiles = (req.files as Express.Multer.File[]) || [];
+    const attachments = uploadedFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      filename: file.filename,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path,
+    }));
 
     // 1. Persist email record in PostgreSQL with 'scheduled' status
     let createdRecord;
     try {
       createdRecord = await emailRepository.createEmail({
         id: emailId,
+        userId,
         senderEmail,
         recipient,
         subject,
         body,
         scheduledAt,
+        attachments,
       });
     } catch (dbErr: any) {
       if (dbErr.code === '23505') {
@@ -148,6 +165,7 @@ export const scheduleEmail = async (req: Request, res: Response): Promise<Respon
           recipient,
           subject,
           body,
+          attachments,
         },
         delayMs,
         emailId
@@ -167,6 +185,9 @@ export const scheduleEmail = async (req: Request, res: Response): Promise<Respon
       });
     }
 
+    // 3. Asynchronously index in Elasticsearch
+    elasticsearchService.indexEmail(createdRecord).catch(() => {});
+
     return res.status(201).json({
       message: 'Email scheduled successfully',
       data: createdRecord,
@@ -177,6 +198,192 @@ export const scheduleEmail = async (req: Request, res: Response): Promise<Respon
       error: 'An unexpected internal error occurred while scheduling email',
       details: err.message,
     });
+  }
+};
+
+/**
+ * POST /api/emails/bulk
+ * Schedules multiple emails or a batch campaign with pacing delay between recipients.
+ */
+export const scheduleBulkEmails = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const {
+      recipients,
+      emails: customEmailsList,
+      senderEmail,
+      subject,
+      body,
+      scheduledAt,
+      delayBetweenEmailsMs = 0,
+    } = req.body;
+
+    const userId = req.user?.id || DEFAULT_USER_ID;
+    const resolvedSender = (senderEmail || config.smtp.from).trim().toLowerCase();
+    const scheduledRecords: any[] = [];
+    const errors: any[] = [];
+
+    // Case A: Multi-recipient list with shared subject/body and optional pacing delay
+    if (Array.isArray(recipients) && recipients.length > 0) {
+      if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
+        return res.status(400).json({ error: 'Subject is required for bulk email scheduling' });
+      }
+      if (!body || typeof body !== 'string' || body.trim().length === 0) {
+        return res.status(400).json({ error: 'Body is required for bulk email scheduling' });
+      }
+
+      const baseTime = scheduledAt ? new Date(scheduledAt).getTime() : Date.now();
+      const stepDelay = Math.max(0, parseInt(String(delayBetweenEmailsMs), 10) || 0);
+
+      for (let i = 0; i < recipients.length; i++) {
+        const rawRecipient = recipients[i];
+        const recipientEmail = typeof rawRecipient === 'string' ? rawRecipient.trim() : rawRecipient?.email?.trim();
+
+        if (!recipientEmail || !EMAIL_REGEX.test(recipientEmail)) {
+          errors.push({ recipient: rawRecipient, error: 'Invalid recipient email format' });
+          continue;
+        }
+
+        const emailId = crypto.randomUUID();
+        const targetTimeMs = Math.max(Date.now(), baseTime + i * stepDelay);
+        const emailScheduledAt = new Date(targetTimeMs).toISOString();
+        const delayMs = Math.max(0, targetTimeMs - Date.now());
+
+        try {
+          const created = await emailRepository.createEmail({
+            id: emailId,
+            userId,
+            senderEmail: resolvedSender,
+            recipient: recipientEmail,
+            subject: subject.trim(),
+            body: String(body),
+            scheduledAt: emailScheduledAt,
+          });
+
+          await emailQueueService.addScheduledEmailJob(
+            {
+              id: emailId,
+              senderEmail: resolvedSender,
+              recipient: recipientEmail,
+              subject: subject.trim(),
+              body: String(body),
+            },
+            delayMs,
+            emailId
+          );
+
+          elasticsearchService.indexEmail(created).catch(() => {});
+          scheduledRecords.push(created);
+        } catch (itemErr: any) {
+          errors.push({ recipient: recipientEmail, error: itemErr.message });
+        }
+      }
+    }
+    // Case B: Explicit array of distinct email objects
+    else if (Array.isArray(customEmailsList) && customEmailsList.length > 0) {
+      for (const item of customEmailsList) {
+        const validation = validateSchedulePayload(item);
+        if (!validation.valid || !validation.sanitized) {
+          errors.push({ payload: item, error: validation.error });
+          continue;
+        }
+
+        const { id: requestedId, senderEmail: itemSender, recipient, subject: itemSubject, body: itemBody, scheduledAt: itemScheduledAt, delayMs } = validation.sanitized;
+        const emailId = requestedId || crypto.randomUUID();
+
+        try {
+          const created = await emailRepository.createEmail({
+            id: emailId,
+            userId,
+            senderEmail: itemSender,
+            recipient,
+            subject: itemSubject,
+            body: itemBody,
+            scheduledAt: itemScheduledAt,
+          });
+
+          await emailQueueService.addScheduledEmailJob(
+            {
+              id: emailId,
+              senderEmail: itemSender,
+              recipient,
+              subject: itemSubject,
+              body: itemBody,
+            },
+            delayMs,
+            emailId
+          );
+
+          elasticsearchService.indexEmail(created).catch(() => {});
+          scheduledRecords.push(created);
+        } catch (itemErr: any) {
+          errors.push({ id: emailId, recipient, error: itemErr.message });
+        }
+      }
+    } else {
+      return res.status(400).json({
+        error: 'Either recipients array or emails array is required for bulk scheduling',
+      });
+    }
+
+    return res.status(201).json({
+      message: `${scheduledRecords.length} email(s) scheduled successfully`,
+      count: scheduledRecords.length,
+      data: scheduledRecords,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (err: any) {
+    console.error('[EmailController] Error in scheduleBulkEmails:', err.message);
+    return res.status(500).json({ error: 'Failed to process bulk scheduling request', details: err.message });
+  }
+};
+
+/**
+ * GET /api/emails/search
+ * Full-text search across subject, body, recipient using Elasticsearch (with PostgreSQL fallback).
+ */
+export const searchEmails = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { q, query: legacyQuery, status, senderEmail, page, limit } = req.query;
+    const queryString = String(q || legacyQuery || '').trim();
+
+    const result = await elasticsearchService.searchEmails({
+      query: queryString,
+      userId: req.user?.id,
+      status: status ? String(status).toLowerCase() : undefined,
+      senderEmail: senderEmail ? String(senderEmail).trim() : undefined,
+      page: parseInt(String(page || '1'), 10),
+      limit: parseInt(String(limit || '20'), 10),
+    });
+
+    return res.status(200).json({
+      data: result.data,
+      pagination: {
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+      },
+      source: result.source,
+    });
+  } catch (err: any) {
+    console.error('[EmailController] Error searching emails:', err.message);
+    return res.status(500).json({ error: 'Search failed', details: err.message });
+  }
+};
+
+/**
+ * POST /api/emails/reindex
+ * Bulk reindexes all database emails into Elasticsearch.
+ */
+export const reindexEmails = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const result = await elasticsearchService.reindexAllFromDatabase();
+    return res.status(200).json({
+      message: 'Reindex completed',
+      ...result,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Reindex failed', details: err.message });
   }
 };
 
@@ -196,6 +403,7 @@ export const listEmails = async (req: Request, res: Response): Promise<Response>
     }
 
     const result = await emailRepository.listEmails({
+      userId: req.user?.id,
       status: normalizedStatus,
       senderEmail: senderEmail ? String(senderEmail).trim() : undefined,
       page: parseInt(String(page || '1'), 10),
@@ -233,7 +441,7 @@ export const getEmailById = async (req: Request, res: Response): Promise<Respons
       return res.status(400).json({ error: 'Invalid email ID: must be a valid UUID' });
     }
 
-    const email = await emailRepository.getEmailById(id);
+    const email = await emailRepository.getEmailById(id, req.user?.id);
     if (!email) {
       return res.status(404).json({ error: `Email record with ID '${id}' not found` });
     }
@@ -248,10 +456,52 @@ export const getEmailById = async (req: Request, res: Response): Promise<Respons
   }
 };
 
+/**
+ * GET /api/emails/:id/attachments/:attachmentId
+ * Downloads an email attachment securely.
+ */
+export const downloadAttachment = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const rawAttId = req.params.attachmentId;
+    const emailId = Array.isArray(rawId) ? rawId[0] : rawId;
+    const attachmentId = Array.isArray(rawAttId) ? rawAttId[0] : rawAttId;
+
+    if (!emailId || !UUID_REGEX.test(emailId)) {
+      res.status(400).json({ error: 'Invalid email ID: must be a valid UUID' });
+      return;
+    }
+
+    const email = await emailRepository.getEmailById(emailId, req.user?.id);
+    if (!email) {
+      res.status(404).json({ error: 'Email record not found' });
+      return;
+    }
+
+    const att = (email.attachments || []).find(
+      (a: any) => a.id === attachmentId || a.filename === attachmentId
+    );
+
+    if (!att || !att.path || !fs.existsSync(att.path)) {
+      res.status(404).json({ error: 'Attachment file not found on disk' });
+      return;
+    }
+
+    res.download(att.path, att.originalName || att.filename);
+  } catch (err: any) {
+    console.error('[EmailController] Attachment download error:', err.message);
+    res.status(500).json({ error: 'Failed to download attachment', details: err.message });
+  }
+};
+
 export const emailController = {
   scheduleEmail,
+  scheduleBulkEmails,
+  searchEmails,
+  reindexEmails,
   listEmails,
   getEmailById,
+  downloadAttachment,
   validateSchedulePayload,
 };
 

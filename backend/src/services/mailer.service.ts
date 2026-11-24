@@ -5,23 +5,46 @@ import { config } from '../config/index.js';
 let cachedTransporter: Transporter | null = null;
 let transporterInitPromise: Promise<Transporter> | null = null;
 
+export interface EmailAttachmentOption {
+  filename: string;
+  path?: string;
+  content?: Buffer | string;
+  contentType?: string;
+}
+
 export interface SendEmailOptions {
   recipient: string;
   subject: string;
   body: string;
   from?: string;
+  attachments?: EmailAttachmentOption[];
 }
 
 export interface SendEmailResult {
   messageId: string;
   previewUrl: string | null;
   response: string;
+  transportType?: 'ethereal' | 'smtp' | 'gmail';
 }
+
+/**
+ * Returns the current transport type based on configured credentials and provider.
+ */
+export const getTransportType = (): 'ethereal' | 'smtp' | 'gmail' => {
+  if (config.smtp.provider === 'gmail') {
+    return 'gmail';
+  }
+  if (config.smtp.provider === 'custom' || (config.smtp.user && config.smtp.pass && config.smtp.host !== 'smtp.ethereal.email')) {
+    return 'smtp';
+  }
+  return 'ethereal';
+};
 
 /**
  * Initializes and returns the Nodemailer transporter.
  * Uses configured SMTP credentials if provided; otherwise creates an ephemeral
  * Ethereal test account for development and testing.
+ * Strictly throws an error in production if SMTP credentials are missing.
  */
 export const getTransporter = async (): Promise<Transporter> => {
   if (cachedTransporter) {
@@ -36,8 +59,39 @@ export const getTransporter = async (): Promise<Transporter> => {
     let authUser = config.smtp.user;
     let authPass = config.smtp.pass;
 
-    // If explicit credentials are not configured, provision an Ethereal test account
+    // Handle explicit Gmail SMTP configuration
+    if (config.smtp.provider === 'gmail') {
+      if (!authUser || !authPass) {
+        throw new Error(
+          'SMTP_PROVIDER is set to "gmail", but SMTP_USER (your Gmail address) or SMTP_PASS (Google 16-character App Password) is missing. Silent fallback to Ethereal is disabled when Gmail is selected.'
+        );
+      }
+      console.log(`[Mailer] Configuring Gmail SMTP transport for ${authUser} via smtp.gmail.com:587`);
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false, // TLS
+        auth: {
+          user: authUser,
+          pass: authPass,
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 10000,
+        socketTimeout: 30000,
+      });
+
+      cachedTransporter = transporter;
+      return transporter;
+    }
+
+    // If explicit credentials are not configured
     if (!authUser || !authPass) {
+      if (config.env === 'production') {
+        throw new Error(
+          'Production SMTP credentials are missing (SMTP_USER / SMTP_PASS). Ethereal test fallback is disabled in production.'
+        );
+      }
+
       console.log('[Mailer] No SMTP credentials provided. Creating ephemeral Ethereal test account...');
       try {
         const testAccount = await nodemailer.createTestAccount();
@@ -74,7 +128,7 @@ export const getTransporter = async (): Promise<Transporter> => {
  * Sends an email using the configured or test SMTP transporter.
  * Captures the Ethereal message preview URL if available.
  */
-export const sendEmail = async ({ recipient, subject, body, from }: SendEmailOptions): Promise<SendEmailResult> => {
+export const sendEmail = async ({ recipient, subject, body, from, attachments }: SendEmailOptions): Promise<SendEmailResult> => {
   if (!recipient || typeof recipient !== 'string') {
     throw new TypeError('Recipient email address is required');
   }
@@ -85,13 +139,22 @@ export const sendEmail = async ({ recipient, subject, body, from }: SendEmailOpt
 
   const transporter = await getTransporter();
 
-  const mailOptions = {
+  const mailOptions: any = {
     from: from || config.smtp.from,
     to: recipient.trim(),
     subject: subject.trim(),
     text: body,
     html: body.includes('<') && body.includes('>') ? body : undefined,
   };
+
+  if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+    mailOptions.attachments = attachments.map((att) => ({
+      filename: att.filename,
+      path: att.path,
+      content: att.content,
+      contentType: att.contentType,
+    }));
+  }
 
   const info = await transporter.sendMail(mailOptions);
   const previewUrl = nodemailer.getTestMessageUrl(info) || null;
@@ -100,6 +163,7 @@ export const sendEmail = async ({ recipient, subject, body, from }: SendEmailOpt
     messageId: info.messageId,
     previewUrl,
     response: info.response || '',
+    transportType: getTransportType(),
   };
 };
 
@@ -121,6 +185,7 @@ export const setTransporter = (transporter: Transporter | null): void => {
 
 export const mailerService = {
   getTransporter,
+  getTransportType,
   setTransporter,
   sendEmail,
   resetTransporter,

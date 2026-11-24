@@ -2,6 +2,8 @@ import app from './app.js';
 import { config } from './config/index.js';
 import { closeEmailQueue } from './queues/email.queue.js';
 import { closeDatabasePool } from './config/database.js';
+import { closeRateLimiter } from './services/ratelimit.service.js';
+import { closeSlackService } from './services/slack.service.js';
 
 const server = app.listen(config.port, () => {
   console.log(`===============================================`);
@@ -17,7 +19,7 @@ const SHUTDOWN_TIMEOUT_MS = 10000;
 const CONNECTION_DRAIN_MS = 3000;
 
 // Graceful shutdown handling
-export const handleShutdown = async (signal) => {
+export const handleShutdown = async (signal: string) => {
   if (isShuttingDown) {
     console.log(`\nShutdown already in progress. Ignoring repeated signal: ${signal}`);
     return;
@@ -27,7 +29,6 @@ export const handleShutdown = async (signal) => {
 
   let exitCode = 0;
 
-  // Active referenced watchdog: guarantees maximum shutdown duration if teardown hangs
   const watchdog = setTimeout(() => {
     console.error(`Shutdown watchdog timed out after ${SHUTDOWN_TIMEOUT_MS}ms. Forcing process exit.`);
     process.exit(1);
@@ -35,7 +36,7 @@ export const handleShutdown = async (signal) => {
 
   try {
     // 1. Stop accepting new incoming HTTP connections
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       server.close((err) => {
         if (err) {
           console.error('Error closing HTTP server:', err.message);
@@ -48,11 +49,11 @@ export const handleShutdown = async (signal) => {
 
       // 2. Allow existing connections a brief grace period to finish, then force-close lingering keep-alives
       setTimeout(() => {
-        if (typeof server.closeIdleConnections === 'function') {
-          server.closeIdleConnections();
+        if (typeof (server as any).closeIdleConnections === 'function') {
+          (server as any).closeIdleConnections();
         }
-        if (typeof server.closeAllConnections === 'function') {
-          server.closeAllConnections();
+        if (typeof (server as any).closeAllConnections === 'function') {
+          (server as any).closeAllConnections();
         }
       }, CONNECTION_DRAIN_MS).unref();
     });
@@ -61,21 +62,22 @@ export const handleShutdown = async (signal) => {
     await closeEmailQueue();
     console.log('All queue connections closed.');
 
-    // 4. Gracefully close database connection pool
+    // 4. Gracefully close Rate Limiter and Slack Redis connections
+    await closeRateLimiter();
+    await closeSlackService();
+    console.log('Redis connections closed.');
+
+    // 5. Gracefully close database connection pool
     await closeDatabasePool();
     console.log('Database connection pool closed.');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error during graceful shutdown:', err.message);
     exitCode = 1;
   } finally {
     process.exitCode = exitCode;
     if (exitCode === 0) {
       clearTimeout(watchdog);
-      // Allow Node.js to exit naturally when the event loop is empty
     } else {
-      // On failure, unreference watchdog so it does not unnecessarily hold open
-      // an otherwise empty loop, while ensuring it will still terminate the process
-      // if lingering asynchronous handles keep the event loop alive.
       watchdog.unref();
     }
   }
@@ -83,3 +85,5 @@ export const handleShutdown = async (signal) => {
 
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGINT', () => handleShutdown('SIGINT'));
+
+export { server };

@@ -6,24 +6,56 @@ dotenv.config();
 const { Pool } = pg;
 
 const isSslEnabled = process.env.DATABASE_SSL === 'true' ||
-  (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('sslmode=require'));
+  Boolean(process.env.DATABASE_URL && (
+    process.env.DATABASE_URL.includes('sslmode=require') ||
+    process.env.DATABASE_URL.includes('sslmode=verify-full') ||
+    process.env.DATABASE_URL.includes('sslmode=verify-ca') ||
+    process.env.DATABASE_URL.includes('neon.tech') ||
+    process.env.DATABASE_URL.includes('supabase.co') ||
+    process.env.DATABASE_URL.includes('pooler.supabase.com')
+  ));
 
-const poolConfig = process.env.DATABASE_URL
+const allowInsecureSsl = process.env.DATABASE_SSL_ALLOW_INSECURE === 'true';
+
+/**
+ * Returns PostgreSQL SSL configuration object based on environment settings.
+ * Strict certificate verification (rejectUnauthorized: true) is enforced by default whenever SSL is enabled.
+ * Only if DATABASE_SSL_ALLOW_INSECURE === 'true' is rejectUnauthorized set to false.
+ *
+ * @param {boolean} sslEnabled - Whether SSL is active
+ * @param {boolean} allowInsecure - Whether insecure/self-signed certificates are explicitly permitted
+ * @returns {boolean | { rejectUnauthorized: boolean }}
+ */
+export const getDatabaseSslConfig = (
+  sslEnabled: boolean,
+  allowInsecure: boolean
+): boolean | { rejectUnauthorized: boolean } => {
+  if (!sslEnabled) {
+    return false;
+  }
+  return {
+    rejectUnauthorized: !allowInsecure,
+  };
+};
+
+export const sslConfig = getDatabaseSslConfig(isSslEnabled, allowInsecureSsl);
+
+export const poolConfig: pg.PoolConfig = process.env.DATABASE_URL
   ? {
       connectionString: process.env.DATABASE_URL,
-      ssl: isSslEnabled ? { rejectUnauthorized: false } : false,
-      max: parseInt(process.env.DATABASE_POOL_MAX, 10) || 20,
+      ssl: sslConfig,
+      max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     }
   : {
       host: process.env.PGHOST || 'localhost',
-      port: parseInt(process.env.PGPORT, 10) || 5432,
+      port: parseInt(process.env.PGPORT || '5432', 10),
       user: process.env.PGUSER || 'postgres',
       password: process.env.PGPASSWORD || undefined,
       database: process.env.PGDATABASE || 'reachinbox_scheduler',
-      ssl: isSslEnabled ? { rejectUnauthorized: false } : false,
-      max: parseInt(process.env.DATABASE_POOL_MAX, 10) || 20,
+      ssl: sslConfig,
+      max: parseInt(process.env.DATABASE_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
@@ -41,8 +73,7 @@ export const pool = new Pool(poolConfig);
  * @param {Error|any} err - Error emitted by an idle connection
  * @param {pg.PoolClient} [client] - The client that emitted the error
  */
-export const handlePoolError = (err, client) => {
-  // Extract and strictly validate non-sensitive alphanumeric error code (e.g. 'ECONNRESET', '57P01')
+export const handlePoolError = (err: any, _client?: pg.PoolClient): void => {
   const rawCode = err && typeof err === 'object' && typeof err.code === 'string' ? err.code.trim() : null;
   const validCode = rawCode && /^[A-Z0-9_]{3,10}$/i.test(rawCode) ? rawCode.toUpperCase() : null;
 
@@ -58,26 +89,26 @@ pool.on('error', handlePoolError);
 /**
  * Execute a parameterized query.
  * @param {string} text - SQL statement with $1, $2 placeholders
- * @param {Array} [params] - Bound parameters
+ * @param {any[]} [params] - Bound parameters
  * @returns {Promise<pg.QueryResult>}
  */
-export const query = (text, params) => pool.query(text, params);
+export const query = (text: string, params?: any[]): Promise<pg.QueryResult> => pool.query(text, params);
 
 /**
  * Check whether database configuration is provided in environment variables.
  * @returns {boolean}
  */
-export const isDatabaseConfigured = () => {
+export const isDatabaseConfigured = (): boolean => {
   return Boolean(process.env.DATABASE_URL || process.env.PGDATABASE);
 };
 
-let poolClosePromise = null;
+let poolClosePromise: Promise<void> | null = null;
 
 /**
  * Gracefully closes the database pool during shutdown.
  * @returns {Promise<void>}
  */
-export const closeDatabasePool = async () => {
+export const closeDatabasePool = async (): Promise<void> => {
   if (poolClosePromise) {
     return poolClosePromise;
   }
@@ -86,7 +117,7 @@ export const closeDatabasePool = async () => {
     try {
       await pool.end();
       console.log('[PostgreSQL] Connection pool closed gracefully.');
-    } catch (err) {
+    } catch (err: any) {
       console.error('[PostgreSQL] Error closing connection pool:', err.message);
       throw err;
     }

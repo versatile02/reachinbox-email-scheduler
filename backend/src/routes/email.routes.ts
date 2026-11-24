@@ -6,7 +6,7 @@ const router = Router();
 // Schedule a new email
 router.post('/schedule', scheduleEmail);
 
-// List emails with pagination and status filtering
+// List emails with pagination and status/sender filtering
 router.get('/', listEmails);
 
 // Get a single email by UUID

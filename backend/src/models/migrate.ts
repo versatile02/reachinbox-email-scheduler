@@ -6,7 +6,7 @@ import { pool, closeDatabasePool } from '../config/database.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function runMigrations() {
+export async function runMigrations(): Promise<void> {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
@@ -17,7 +17,7 @@ export async function runMigrations() {
     await client.query(schemaSql);
     await client.query('COMMIT');
     console.log('[PostgreSQL:Migration] Schema applied successfully.');
-  } catch (err) {
+  } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('[PostgreSQL:Migration] Migration failed:', err.message);
     throw err;
@@ -27,7 +27,7 @@ export async function runMigrations() {
 }
 
 // Execute migration directly when run from CLI
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && (process.argv[1] === fileURLToPath(import.meta.url) || process.argv[1].endsWith('migrate.ts') || process.argv[1].endsWith('migrate.js'))) {
   runMigrations()
     .then(async () => {
       await closeDatabasePool();

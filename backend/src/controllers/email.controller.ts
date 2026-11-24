@@ -1,17 +1,31 @@
 import crypto from 'crypto';
+import type { Request, Response } from 'express';
 import { emailRepository, EMAIL_STATUSES } from '../models/email.repository.js';
 import { emailQueueService } from '../queues/email.queue.js';
+import { config } from '../config/index.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export interface ValidationResult {
+  valid: boolean;
+  error?: string;
+  sanitized?: {
+    id?: string;
+    senderEmail: string;
+    recipient: string;
+    subject: string;
+    body: string;
+    scheduledAt: string;
+    delayMs: number;
+  };
+}
+
 /**
  * Validates scheduling request payload.
- * @param {Object} body
- * @returns {{ valid: boolean, error?: string, sanitized?: Object }}
  */
-export const validateSchedulePayload = (body = {}) => {
-  const { id: customId, recipient, subject, body: emailBody, scheduledAt, delayMs } = body;
+export const validateSchedulePayload = (body: any = {}): ValidationResult => {
+  const { id: customId, senderEmail, recipient, subject, body: emailBody, scheduledAt, delayMs } = body;
 
   // 0. Optional client-provided ID validation
   if (customId !== undefined && customId !== null) {
@@ -25,18 +39,27 @@ export const validateSchedulePayload = (body = {}) => {
     return { valid: false, error: 'Valid recipient email address is required (e.g. user@example.com)' };
   }
 
-  // 2. Subject validation
+  // 2. Sender validation (optional, defaults to config.smtp.from)
+  let resolvedSender = config.smtp.from;
+  if (senderEmail !== undefined && senderEmail !== null) {
+    if (typeof senderEmail !== 'string' || !EMAIL_REGEX.test(senderEmail.trim())) {
+      return { valid: false, error: 'When provided, senderEmail must be a valid email address' };
+    }
+    resolvedSender = senderEmail.trim().toLowerCase();
+  }
+
+  // 3. Subject validation
   if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
     return { valid: false, error: 'Subject is required and cannot be empty' };
   }
 
-  // 3. Body validation
+  // 4. Body validation
   if (emailBody === undefined || emailBody === null || (typeof emailBody === 'string' && emailBody.trim().length === 0)) {
     return { valid: false, error: 'Body is required and cannot be empty' };
   }
 
-  // 4. Timing validation: accept scheduledAt (ISO 8601 string) or delayMs (numeric)
-  let targetDate;
+  // 5. Timing validation: accept scheduledAt (ISO 8601 string) or delayMs (numeric)
+  let targetDate: Date;
   let computedDelayMs = 0;
 
   if (scheduledAt !== undefined && scheduledAt !== null) {
@@ -45,7 +68,6 @@ export const validateSchedulePayload = (body = {}) => {
       return { valid: false, error: 'scheduledAt must be a valid ISO 8601 date string' };
     }
 
-    // Allow up to a 5-second grace window in the past to accommodate network / processing delays
     const now = Date.now();
     const scheduledTime = targetDate.getTime();
     if (scheduledTime < now - 5000) {
@@ -67,6 +89,7 @@ export const validateSchedulePayload = (body = {}) => {
     valid: true,
     sanitized: {
       id: customId ? customId.trim() : undefined,
+      senderEmail: resolvedSender,
       recipient: recipient.trim(),
       subject: subject.trim(),
       body: String(emailBody),
@@ -80,14 +103,14 @@ export const validateSchedulePayload = (body = {}) => {
  * POST /api/emails/schedule
  * Schedules a new email job with PostgreSQL persistence and BullMQ queueing.
  */
-export const scheduleEmail = async (req, res) => {
+export const scheduleEmail = async (req: Request, res: Response): Promise<Response> => {
   try {
     const validation = validateSchedulePayload(req.body);
-    if (!validation.valid) {
+    if (!validation.valid || !validation.sanitized) {
       return res.status(400).json({ error: validation.error });
     }
 
-    const { id: requestedId, recipient, subject, body, scheduledAt, delayMs } = validation.sanitized;
+    const { id: requestedId, senderEmail, recipient, subject, body, scheduledAt, delayMs } = validation.sanitized;
     const emailId = requestedId || crypto.randomUUID();
 
     // 1. Persist email record in PostgreSQL with 'scheduled' status
@@ -95,12 +118,13 @@ export const scheduleEmail = async (req, res) => {
     try {
       createdRecord = await emailRepository.createEmail({
         id: emailId,
+        senderEmail,
         recipient,
         subject,
         body,
         scheduledAt,
       });
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       if (dbErr.code === '23505') {
         console.warn(`[EmailController] Duplicate email ID rejected: ${emailId}`);
         return res.status(409).json({
@@ -120,6 +144,7 @@ export const scheduleEmail = async (req, res) => {
       await emailQueueService.addScheduledEmailJob(
         {
           id: emailId,
+          senderEmail,
           recipient,
           subject,
           body,
@@ -127,11 +152,10 @@ export const scheduleEmail = async (req, res) => {
         delayMs,
         emailId
       );
-    } catch (queueErr) {
+    } catch (queueErr: any) {
       console.error('[EmailController] Queue dispatch failed for email', emailId, ':', queueErr.message);
 
-      // Mark as failed in DB since queue enqueue was unsuccessful
-      await emailRepository.markEmailFailed(emailId, `Queue unavailable: ${queueErr.message}`).catch((e) => {
+      await emailRepository.markEmailFailed(emailId, `Queue unavailable: ${queueErr.message}`).catch((e: any) => {
         console.error('[EmailController] Failed updating status to failed:', e.message);
       });
 
@@ -147,7 +171,7 @@ export const scheduleEmail = async (req, res) => {
       message: 'Email scheduled successfully',
       data: createdRecord,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[EmailController] Unexpected error in scheduleEmail:', err.message);
     return res.status(500).json({
       error: 'An unexpected internal error occurred while scheduling email',
@@ -158,26 +182,28 @@ export const scheduleEmail = async (req, res) => {
 
 /**
  * GET /api/emails
- * Lists emails with optional status filtering and pagination.
+ * Lists emails with optional status and sender filtering and pagination.
  */
-export const listEmails = async (req, res) => {
+export const listEmails = async (req: Request, res: Response): Promise<Response> => {
   try {
-    const { status, page, limit } = req.query;
+    const { status, senderEmail, page, limit } = req.query;
 
-    if (status && !Object.values(EMAIL_STATUSES).includes(status.toLowerCase())) {
+    const normalizedStatus = status ? String(status).toLowerCase() : undefined;
+    if (normalizedStatus && !Object.values(EMAIL_STATUSES).includes(normalizedStatus as any)) {
       return res.status(400).json({
         error: `Invalid status filter. Allowed values: ${Object.values(EMAIL_STATUSES).join(', ')}`,
       });
     }
 
     const result = await emailRepository.listEmails({
-      status,
-      page: parseInt(page, 10) || 1,
-      limit: parseInt(limit, 10) || 20,
+      status: normalizedStatus,
+      senderEmail: senderEmail ? String(senderEmail).trim() : undefined,
+      page: parseInt(String(page || '1'), 10),
+      limit: parseInt(String(limit || '20'), 10),
     });
 
     return res.status(200).json({
-      data: result.emails,
+      data: (result as any).data || (result as any).emails || [],
       pagination: {
         total: result.total,
         page: result.page,
@@ -185,7 +211,7 @@ export const listEmails = async (req, res) => {
         totalPages: result.totalPages,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[EmailController] Error listing emails:', err.message);
     return res.status(500).json({
       error: 'Failed to retrieve email records',
@@ -198,9 +224,10 @@ export const listEmails = async (req, res) => {
  * GET /api/emails/:id
  * Retrieves a single email record by UUID.
  */
-export const getEmailById = async (req, res) => {
+export const getEmailById = async (req: Request, res: Response): Promise<Response> => {
   try {
-    const { id } = req.params;
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
     if (!id || !UUID_REGEX.test(id)) {
       return res.status(400).json({ error: 'Invalid email ID: must be a valid UUID' });
@@ -212,11 +239,20 @@ export const getEmailById = async (req, res) => {
     }
 
     return res.status(200).json({ data: email });
-  } catch (err) {
-    console.error(`[EmailController] Error retrieving email ${req.params?.id}:`, err.message);
+  } catch (err: any) {
+    console.error(`[EmailController] Error retrieving email:`, err.message);
     return res.status(500).json({
       error: 'Failed to retrieve email record',
       details: err.message,
     });
   }
 };
+
+export const emailController = {
+  scheduleEmail,
+  listEmails,
+  getEmailById,
+  validateSchedulePayload,
+};
+
+export default emailController;

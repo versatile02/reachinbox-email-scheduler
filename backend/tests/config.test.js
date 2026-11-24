@@ -5,7 +5,7 @@ import {
   getWorkerConnectionOptions,
   getRedisConnectionOptions,
 } from '../src/config/redis.js';
-import { pool, handlePoolError } from '../src/config/database.js';
+import { pool, handlePoolError, getDatabaseSslConfig } from '../src/config/database.js';
 
 describe('Redis Configuration & Options', () => {
   test('Worker connection options require maxRetriesPerRequest: null', () => {
@@ -146,5 +146,19 @@ describe('PostgreSQL Pool Configuration & Error Handling', () => {
     assert.doesNotThrow(() => {
       pool.emit('error', new Error('Simulated idle client dropped connection'));
     });
+  });
+
+  test('PostgreSQL SSL configuration enforces strict certificate verification by default', () => {
+    // When SSL is disabled, returns false
+    assert.equal(getDatabaseSslConfig(false, false), false);
+    assert.equal(getDatabaseSslConfig(false, true), false);
+
+    // When SSL is enabled, default behavior enforces rejectUnauthorized: true
+    const strictSsl = getDatabaseSslConfig(true, false);
+    assert.deepEqual(strictSsl, { rejectUnauthorized: true }, 'SSL must enforce rejectUnauthorized: true by default');
+
+    // When allowInsecure is true, explicitly opts out to rejectUnauthorized: false
+    const insecureSsl = getDatabaseSslConfig(true, true);
+    assert.deepEqual(insecureSsl, { rejectUnauthorized: false }, 'DATABASE_SSL_ALLOW_INSECURE=true must opt-out to rejectUnauthorized: false');
   });
 });

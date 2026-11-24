@@ -1,16 +1,29 @@
 import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { config } from '../config/index.js';
 
-let cachedTransporter = null;
-let transporterInitPromise = null;
+let cachedTransporter: Transporter | null = null;
+let transporterInitPromise: Promise<Transporter> | null = null;
+
+export interface SendEmailOptions {
+  recipient: string;
+  subject: string;
+  body: string;
+  from?: string;
+}
+
+export interface SendEmailResult {
+  messageId: string;
+  previewUrl: string | null;
+  response: string;
+}
 
 /**
  * Initializes and returns the Nodemailer transporter.
  * Uses configured SMTP credentials if provided; otherwise creates an ephemeral
  * Ethereal test account for development and testing.
- * @returns {Promise<nodemailer.Transporter>}
  */
-export const getTransporter = async () => {
+export const getTransporter = async (): Promise<Transporter> => {
   if (cachedTransporter) {
     return cachedTransporter;
   }
@@ -31,7 +44,7 @@ export const getTransporter = async () => {
         authUser = testAccount.user;
         authPass = testAccount.pass;
         console.log(`[Mailer] Ethereal test account provisioned: ${authUser}`);
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Mailer] Failed to create Ethereal test account:', err.message);
         throw new Error(`Unable to initialize email transport: ${err.message}`);
       }
@@ -59,16 +72,9 @@ export const getTransporter = async () => {
 
 /**
  * Sends an email using the configured or test SMTP transporter.
- * Automatically captures the Ethereal message preview URL if available.
- *
- * @param {Object} emailOptions
- * @param {string} emailOptions.recipient - Destination email address
- * @param {string} emailOptions.subject - Email subject line
- * @param {string} emailOptions.body - Email plain text or HTML body
- * @param {string} [emailOptions.from] - Custom from address (optional)
- * @returns {Promise<{ messageId: string, previewUrl: string|null, response: string }>}
+ * Captures the Ethereal message preview URL if available.
  */
-export const sendEmail = async ({ recipient, subject, body, from }) => {
+export const sendEmail = async ({ recipient, subject, body, from }: SendEmailOptions): Promise<SendEmailResult> => {
   if (!recipient || typeof recipient !== 'string') {
     throw new TypeError('Recipient email address is required');
   }
@@ -93,26 +99,24 @@ export const sendEmail = async ({ recipient, subject, body, from }) => {
   return {
     messageId: info.messageId,
     previewUrl,
-    response: info.response,
+    response: info.response || '',
   };
 };
 
 /**
  * Resets the cached transporter instance.
- * Useful for test isolation and environment updates.
  */
-export const resetTransporter = () => {
+export const resetTransporter = (): void => {
   cachedTransporter = null;
   transporterInitPromise = null;
 };
 
 /**
  * Sets a custom or mock transporter for testing.
- * @param {Object} transporter
  */
-export const setTransporter = (transporter) => {
+export const setTransporter = (transporter: Transporter | null): void => {
   cachedTransporter = transporter;
-  transporterInitPromise = Promise.resolve(transporter);
+  transporterInitPromise = transporter ? Promise.resolve(transporter) : null;
 };
 
 export const mailerService = {

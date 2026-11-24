@@ -1,6 +1,7 @@
 import app from './app.js';
 import { config } from './config/index.js';
 import { closeEmailQueue } from './queues/email.queue.js';
+import { closeDatabasePool } from './config/database.js';
 
 const server = app.listen(config.port, () => {
   console.log(`===============================================`);
@@ -59,6 +60,10 @@ export const handleShutdown = async (signal) => {
     // 3. Gracefully close BullMQ queue connections
     await closeEmailQueue();
     console.log('All queue connections closed.');
+
+    // 4. Gracefully close database connection pool
+    await closeDatabasePool();
+    console.log('Database connection pool closed.');
   } catch (err) {
     console.error('Error during graceful shutdown:', err.message);
     exitCode = 1;

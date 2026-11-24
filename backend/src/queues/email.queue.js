@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { getRedisConnectionOptions } from '../config/redis.js';
+import { getProducerConnectionOptions } from '../config/redis.js';
 
 export const EMAIL_QUEUE_NAME = 'email-queue';
 
@@ -25,15 +25,19 @@ export const defaultEmailJobOptions = {
 };
 
 /**
- * Initialize reusable BullMQ Queue for scheduled emails
+ * Initialize reusable BullMQ Queue for scheduled emails using producer options
+ * (bounded retries to prevent blocking HTTP endpoints).
  */
 export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
-  connection: getRedisConnectionOptions(),
+  connection: getProducerConnectionOptions(),
   defaultJobOptions: defaultEmailJobOptions,
 });
 
 // Attach queue error listener to prevent uncaught exceptions on Redis disconnects
 emailQueue.on('error', (err) => {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   const errorMessage = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
   console.error(`[BullMQ:${EMAIL_QUEUE_NAME}] Queue notice: ${errorMessage}`);
 });
@@ -150,3 +154,11 @@ export const closeEmailQueue = async () => {
 
   return queueClosePromise;
 };
+
+export const emailQueueService = {
+  addScheduledEmailJob,
+  getEmailQueueMetrics,
+  closeEmailQueue,
+};
+
+export default emailQueueService;

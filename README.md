@@ -51,11 +51,14 @@ ReachInbox relies on reliable scheduling and sending of cold outreach emails at 
 reachinbox-email-scheduler/
 ├── backend/
 │   ├── src/
-│   │   ├── config/              # Centralized environment & app configuration
+│   │   ├── config/
+│   │   │   ├── index.js         # Centralized environment & app configuration
+│   │   │   └── redis.js         # Redis client factory & connection options
 │   │   ├── controllers/         # Request handlers (e.g., health.controller.js)
 │   │   ├── routes/              # Express API route declarations
 │   │   ├── services/            # Business logic (email & scheduler services)
-│   │   ├── queues/              # BullMQ queue definitions
+│   │   ├── queues/
+│   │   │   └── email.queue.js   # Reusable BullMQ email queue & scheduling helpers
 │   │   ├── workers/             # Dedicated background email dispatch workers
 │   │   ├── models/              # Database entities & schema definitions
 │   │   ├── middleware/          # Error handling, validation, logging middlewares
@@ -104,12 +107,36 @@ In this **Phase 1: Foundation Initialization**, we have established:
 
 - **Node.js**: `v18.0.0` or higher (verified with `v24.6.0`)
 - **npm**: `v9.0.0` or higher (verified with `v11.5.1`)
+- **Redis**: `v6.0.0` or higher (`v7+` recommended). Required for BullMQ job queue persistence.
 
 ---
 
 ## Getting Started
 
-### Backend Setup
+### 1. Redis Setup (Required for Job Queue)
+
+BullMQ requires a running Redis instance to persist delayed jobs. You can run Redis locally using any of the following methods:
+
+#### Option A: Docker (Recommended for persistence)
+```bash
+docker run -d --name reachinbox-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes
+```
+> **Note on Durability:** Running Redis with `--appendonly yes` enables the Append-Only File (AOF) log, which ensures delayed email jobs are persisted to disk and survive server or container restarts.
+
+#### Option B: Local Service / WSL (Linux or Windows)
+- **Ubuntu/Debian / WSL:**
+  ```bash
+  sudo apt update && sudo apt install redis-server -y
+  sudo service redis-server start
+  ```
+- **Windows (Native):** Run Redis via Windows service or [Redis for Windows port](https://github.com/microsoftarchive/redis/releases).
+
+#### Option C: Cloud Redis
+If running without local Docker/Redis, configure a free managed instance (e.g., [Upstash](https://upstash.com) or [Redis Cloud](https://redis.io/cloud/)) and specify `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD` in `backend/.env`.
+
+---
+
+### 2. Backend Setup
 
 1. Open a terminal and navigate to the `backend` directory:
    ```bash
@@ -187,16 +214,18 @@ Navigate directly to:
 
 ## Architecture & Reliability Highlights
 
-- **Strictly No Cron Jobs:** The scheduler will use BullMQ with Redis delayed jobs (`queue.add('sendEmail', data, { delay })`). Delayed jobs are persisted in Redis sorted sets.
-- **Server Restart Resilience:** Because job state lives inside Redis and email records reside in PostgreSQL, restarting the backend or worker process does not drop pending jobs.
+- **Strictly No Cron Jobs:** The scheduler uses BullMQ delayed jobs (`emailQueue.add('sendEmail', data, { delay })`). Delayed jobs are scheduled in Redis sorted sets (`ZSET`) with millisecond precision without recurring database polling stampedes.
+- **BullMQ Connection Standard (`maxRetriesPerRequest: null`):** BullMQ requires setting `maxRetriesPerRequest: null` on its Redis connection options. This allows blocking queue commands (such as `BRPOPLPUSH` / `BLMOVE`) to wait for jobs without prematurely throwing retry limit errors.
+- **Server Restart Resilience & Redis AOF:** Because job state is maintained in Redis, restarting the Node.js backend server does not lose scheduled jobs. To ensure true durability against Redis server restarts or host crashes, Redis must be configured with Append-Only File persistence (`--appendonly yes`).
 - **Decoupled Worker Architecture:** Email dispatching runs in a dedicated worker process, preventing SMTP network delays or rate limits from blocking HTTP API response times.
+- **At-Least-Once Delivery Considerations:** Network retries or worker restarts during SMTP dispatch can lead to duplicate sends unless idempotency is enforced. The queue supports custom `jobId` parameters, and upcoming phases will introduce database transaction checks to enforce idempotency.
 
 ---
 
 ## Development Roadmap
 
 - **Task 1 (Completed):** Environment inspection, project structure initialization, Express health check, React Vite frontend landing page, `.gitignore`, `.env.example`, and documentation.
-- **Task 2 (Next):** BullMQ queue integration and Redis connection setup for persistent delayed jobs.
+- **Task 2 (In Progress - Task 2.1 Complete):** BullMQ queue integration and centralized Redis connection setup with graceful shutdown.
 - **Task 3:** PostgreSQL integration with schema migrations for email records (`id`, `recipient`, `subject`, `body`, `scheduledAt`, `sentAt`, `status`).
 - **Task 4:** Background worker implementation with Nodemailer and Ethereal Email fake SMTP.
 - **Task 5:** React Dashboard for composing emails, scheduling time pickers, and viewing real-time queue states.

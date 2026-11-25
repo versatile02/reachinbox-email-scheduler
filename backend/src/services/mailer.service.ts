@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 
 let cachedTransporter: Transporter | null = null;
 let transporterInitPromise: Promise<Transporter> | null = null;
+let isCloudSmtpBlocked = false;
 
 export interface EmailAttachmentOption {
   filename: string;
@@ -113,8 +114,8 @@ export const getTransporter = async (): Promise<Transporter> => {
         user: authUser,
         pass: authPass,
       },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
       socketTimeout: 30000,
     });
 
@@ -136,6 +137,37 @@ export const sendEmail = async ({ recipient, subject, body, from, attachments }:
 
   if (!subject || typeof subject !== 'string') {
     throw new TypeError('Email subject is required');
+  }
+
+  // Fast-path: If port 587 was already detected as blocked on this cloud host, directly dispatch via Vercel HTTPS Ethereal Relay
+  if (isCloudSmtpBlocked && config.smtp.provider === 'ethereal') {
+    try {
+      const relayRes = await fetch('https://reachinbox-email-scheduler-flame-nu.vercel.app/api/ethereal-relay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient,
+          subject,
+          body,
+          from,
+        }),
+      });
+
+      if (relayRes.ok) {
+        const relayData: any = await relayRes.json();
+        if (relayData && relayData.previewUrl) {
+          console.log(`[Mailer:FastPath] Dispatched via HTTPS Ethereal Relay! URL: ${relayData.previewUrl}`);
+          return {
+            messageId: relayData.messageId || `<ethereal-${Date.now()}@reachinbox.ai>`,
+            previewUrl: relayData.previewUrl,
+            response: '250 2.0.0 OK: Dispatched via HTTPS Ethereal Relay',
+            transportType: 'ethereal',
+          };
+        }
+      }
+    } catch (relayErr: any) {
+      console.warn(`[Mailer:FastPath] Ethereal relay attempt failed: ${relayErr.message}`);
+    }
   }
 
   const transporter = await getTransporter();
@@ -177,6 +209,7 @@ export const sendEmail = async ({ recipient, subject, body, from, attachments }:
 
     // If cloud host blocks outbound SMTP ports (like Railway hobby tier blocking port 587)
     if (isNetworkTimeout && config.smtp.provider === 'ethereal') {
+      isCloudSmtpBlocked = true;
       console.warn(
         `[Mailer] Outbound SMTP port 587 blocked by cloud host (${err.message}). Attempting dispatch via Vercel HTTPS Ethereal Relay...`
       );

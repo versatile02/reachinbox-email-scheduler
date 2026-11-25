@@ -308,8 +308,12 @@ export const listEmails = async (options: {
   }
 
   if (options.status) {
-    params.push(options.status);
-    conditions.push(`status = $${params.length}`);
+    if (options.status === 'scheduled') {
+      conditions.push("(status = 'scheduled' OR status = 'processing')");
+    } else {
+      params.push(options.status);
+      conditions.push(`status = $${params.length}`);
+    }
   }
 
   if (options.senderEmail) {
@@ -443,7 +447,7 @@ export const markEmailReschedule = async (
       scheduled_at = $3,
       claim_token = NULL,
       updated_at = NOW()
-    WHERE id = $1 AND claim_token = $4
+    WHERE id = $1 AND (claim_token = $4 OR claim_token IS NULL OR status = 'processing')
     RETURNING
       id,
       user_id AS "userId",

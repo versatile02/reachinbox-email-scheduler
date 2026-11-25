@@ -162,10 +162,10 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
     }
 
     // 8. Pacing Delay:
-    // For small pacing delays (<= 2000ms), a brief in-process pause avoids sorted-set thrashing.
-    // For larger pacing delays (> 2000ms), release lease back to scheduled and reschedule via BullMQ moveToDelayed
-    // to avoid blocking worker concurrency slots.
-    const IN_PROCESS_PACING_THRESHOLD_MS = 2000;
+    // For small pacing delays (<= 20000ms), a brief in-process pause avoids sorted-set thrashing and ensures
+    // bulk batches (e.g. 5-10 leads) deliver smoothly without being dumped into BullMQ delayed queues.
+    // For larger pacing delays (> 20000ms), release lease back to scheduled and reschedule via BullMQ moveToDelayed.
+    const IN_PROCESS_PACING_THRESHOLD_MS = 20000;
     if (reservation.sleepMs > IN_PROCESS_PACING_THRESHOLD_MS) {
       console.log(`[Worker] Pacing delay for ${senderEmail} is ${reservation.sleepMs}ms. Rescheduling via BullMQ.`);
       const dispatchDate = new Date(reservation.dispatchSlot);

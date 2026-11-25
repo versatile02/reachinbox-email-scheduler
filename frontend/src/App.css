@@ -474,6 +474,10 @@
   transition: width 0.2s ease;
 }
 
+.sidebar-mobile-header {
+  display: none;
+}
+
 .sidebar-action-header {
   width: 100%;
 }
@@ -2234,6 +2238,11 @@
    Responsive Media Queries (Desktop, Tablet & Mobile Views)
    ======================================================== */
 
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 900px) {
   .dashboard-kpi-bar {
     grid-template-columns: repeat(2, 1fr) !important;
@@ -2242,7 +2251,7 @@
 
   .header-left {
     width: auto;
-    margin-right: 16px;
+    min-width: auto;
   }
 
   .header-center {
@@ -2250,86 +2259,281 @@
   }
 }
 
-@media (max-width: 640px) {
-  .reachinbox-body {
-    flex-direction: column !important;
+@media (max-width: 768px) {
+  /* 1. Header responsive styling */
+  .app-header {
+    height: 58px !important;
+    padding: 0 12px !important;
+    gap: 8px !important;
   }
 
-  .sidebar {
-    width: 100% !important;
-    height: auto !important;
-    border-right: none !important;
+  .header-left {
+    min-width: auto !important;
+    gap: 8px !important;
+  }
+
+  .logo-onb {
+    font-size: 16px !important;
+  }
+
+  .logo-badge-outbox {
+    display: none !important;
+  }
+
+  .header-center {
+    flex: 1 !important;
+    max-width: 100% !important;
+    margin: 0 4px !important;
+  }
+
+  .search-bar-container {
+    height: 36px !important;
+    padding: 0 10px !important;
+  }
+
+  .search-input {
+    font-size: 12px !important;
+  }
+
+  .search-actions {
+    gap: 4px !important;
+    margin-left: 4px !important;
+  }
+
+  .header-right {
+    min-width: auto !important;
+    gap: 6px !important;
+  }
+
+  /* Queue button and full logout button hidden on small mobile to give room; both exist in sidebar/dropdown */
+  .queue-dashboard-pill {
+    display: none !important;
+  }
+
+  .header-logout-action-btn {
+    display: none !important;
+  }
+
+  .header-user-display-name {
+    display: none !important;
+  }
+
+  .header-chevron-icon {
+    display: none !important;
+  }
+
+  .header-user-badge {
+    padding: 2px !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .header-avatar-container {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  /* 2. Mobile Drawer Navigation */
+  .sidebar-mobile-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    margin-bottom: 4px;
     border-bottom: 1px solid var(--border-color);
-    padding: 12px 16px !important;
   }
 
-  .sidebar-user-card {
-    margin-bottom: 8px !important;
+  .sidebar-mobile-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
   }
 
-  .sidebar-nav {
+  .sidebar-mobile-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .app-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 280px !important;
+    max-width: 82vw !important;
+    height: 100vh !important;
+    z-index: 1000 !important;
+    background-color: #ffffff !important;
+    box-shadow: 4px 0 28px rgba(0, 0, 0, 0.22) !important;
+    overflow-y: auto !important;
+    transform: translateX(0) !important;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    display: flex !important;
+  }
+
+  .reachinbox-layout.sidebar-collapsed .app-sidebar {
+    transform: translateX(-100%) !important;
+    display: flex !important;
+  }
+
+  .sidebar-mobile-backdrop {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    background-color: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(2px) !important;
+    -webkit-backdrop-filter: blur(2px) !important;
+    z-index: 999 !important;
+    animation: fadeInBackdrop 0.2s ease-out !important;
+  }
+
+  /* 3. Main Content: takes full 100% width on mobile */
+  .reachinbox-main-body {
+    position: relative !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .reachinbox-content-area {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 14px 12px !important;
+    flex: 1 1 100% !important;
+  }
+
+  /* View Header and KPI stats on mobile */
+  .view-header-strip {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 14px 12px !important;
+    gap: 10px !important;
+    border-radius: 8px !important;
+  }
+
+  .view-header-left {
+    width: 100% !important;
+  }
+
+  .view-title {
+    font-size: 18px !important;
+  }
+
+  .view-subtitle {
+    font-size: 12px !important;
+  }
+
+  .view-header-right {
+    width: 100% !important;
     display: flex !important;
     flex-wrap: wrap !important;
     gap: 6px !important;
   }
 
-  .sidebar-nav-item {
-    flex: 1 1 45% !important;
-    padding: 8px 12px !important;
+  .overview-stat-pill {
+    padding: 4px 10px !important;
+    font-size: 11px !important;
   }
 
   .dashboard-kpi-bar {
     grid-template-columns: 1fr 1fr !important;
-    padding: 12px !important;
+    padding: 8px 0 !important;
     gap: 8px !important;
   }
 
   .kpi-card {
-    padding: 10px 12px !important;
+    padding: 10px !important;
   }
 
   .kpi-number {
-    font-size: 18px !important;
-  }
-
-  .app-header {
-    padding: 0 12px !important;
-  }
-
-  .search-input {
-    font-size: 13px !important;
+    font-size: 16px !important;
   }
 
   .email-row-card {
     flex-wrap: wrap !important;
-    padding: 12px !important;
+    padding: 12px 10px !important;
     gap: 8px !important;
   }
 
   .email-row-recipient {
     width: 100% !important;
     font-weight: 600 !important;
+    font-size: 13px !important;
   }
 
-  .compose-container {
-    padding: 16px 12px !important;
+  .email-row-subject-wrap {
+    width: 100% !important;
   }
 
-  .compose-meta-row {
+  .email-row-badge-wrap {
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+
+  /* 4. Compose View on mobile */
+  .compose-view-container {
+    padding: 12px 6px !important;
+  }
+
+  .compose-top-bar {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .compose-title {
+    font-size: 16px !important;
+  }
+
+  .compose-field-row {
     flex-direction: column !important;
     align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .compose-label {
+    width: 100% !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+
+  .to-field-wrapper {
+    flex-direction: column !important;
+    align-items: stretch !important;
     gap: 8px !important;
+    width: 100% !important;
   }
 
-  .compose-rich-toolbar {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 4px !important;
+  .upload-list-btn {
+    width: 100% !important;
+    justify-content: center !important;
   }
 
+  .send-later-popover {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: calc(100vw - 32px) !important;
+    max-width: 320px !important;
+    right: auto !important;
+    z-index: 1100 !important;
+  }
+
+  /* 5. Modals on mobile */
   .modal-dialog {
     width: 95vw !important;
     max-width: 95vw !important;
     margin: 10px !important;
+    padding: 16px !important;
   }
 }

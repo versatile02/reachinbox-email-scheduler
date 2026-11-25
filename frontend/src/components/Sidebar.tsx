@@ -11,6 +11,7 @@ interface SidebarProps {
   onOpenSenders: () => void;
   onOpenSlack: () => void;
   onLogout?: () => void;
+  onClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -21,9 +22,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCompose,
   onOpenSenders,
   onOpenSlack,
+  onClose,
 }) => {
   return (
     <aside className="app-sidebar">
+      {/* Mobile Drawer Close Header */}
+      <div className="sidebar-mobile-header">
+        <span className="sidebar-mobile-title">Navigation</span>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="sidebar-mobile-close-btn"
+            aria-label="Close navigation"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       {/* Primary Action Button: + Compose */}
       <div className="sidebar-action-header">
         <button type="button" onClick={onOpenCompose} className="sidebar-compose-btn">

@@ -15,8 +15,16 @@ export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Navigation and view state
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Navigation and view state (default collapsed on mobile screens <= 768px)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth > 768
+  );
+
+  const closeSidebarOnMobile = () => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setIsSidebarOpen(false);
+    }
+  };
   const [activeTab, setActiveTab] = useState<'scheduled' | 'sent'>('scheduled');
   const [currentView, setCurrentView] = useState<'list' | 'detail' | 'compose'>('list');
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
@@ -222,6 +230,15 @@ export const App: React.FC = () => {
       />
 
       <div className="reachinbox-main-body">
+        {/* Mobile backdrop for drawer */}
+        {isSidebarOpen && (
+          <div
+            className="sidebar-mobile-backdrop"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Close menu backdrop"
+          />
+        )}
+
         {/* Left Sidebar */}
         <Sidebar
           user={currentUser}
@@ -232,11 +249,22 @@ export const App: React.FC = () => {
             setActiveTab(tab);
             setCurrentView('list');
             setSelectedEmail(null);
+            closeSidebarOnMobile();
           }}
-          onOpenCompose={() => setCurrentView('compose')}
-          onOpenSenders={() => setShowSendersModal(true)}
-          onOpenSlack={() => setShowSlackModal(true)}
+          onOpenCompose={() => {
+            setCurrentView('compose');
+            closeSidebarOnMobile();
+          }}
+          onOpenSenders={() => {
+            setShowSendersModal(true);
+            closeSidebarOnMobile();
+          }}
+          onOpenSlack={() => {
+            setShowSlackModal(true);
+            closeSidebarOnMobile();
+          }}
           onLogout={handleLogout}
+          onClose={() => setIsSidebarOpen(false)}
         />
 
         {/* Content Pane */}

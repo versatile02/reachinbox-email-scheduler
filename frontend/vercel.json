@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/ethereal-relay",
+      "destination": "/api/ethereal-relay"
+    },
+    {
+      "source": "/ethereal-relay",
+      "destination": "/api/ethereal-relay"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://reachinbox-email-scheduler-production-a25f3632.up.railway.app/api/:path*"
     },

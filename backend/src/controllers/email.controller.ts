@@ -494,6 +494,88 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
   }
 };
 
+/**
+ * GET /api/emails/:id/preview
+ * Renders a full standalone webmail preview of the sent email.
+ */
+export const previewEmailHtml = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = String(req.params.id || '');
+    if (!id) {
+      res.status(400).send('<h3>Invalid email ID</h3>');
+      return;
+    }
+    const email = await emailRepository.getEmailById(id);
+    if (!email) {
+      res.status(404).send('<h2 style="font-family:sans-serif;text-align:center;margin-top:50px;">Email not found</h2>');
+      return;
+    }
+
+    const dateVal = email.sentAt || email.scheduledAt || email.createdAt || new Date();
+    const formattedDate = new Date(dateVal).toLocaleString('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'medium',
+    });
+
+    const isHtml = email.body && email.body.includes('<') && email.body.includes('>');
+    const renderedBody = isHtml ? email.body : (email.body || '').replace(/\n/g, '<br/>');
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${email.subject} - ReachInbox Webmail Preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 24px 16px; color: #0f172a; }
+    .email-container { max-width: 720px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; overflow: hidden; }
+    .email-header { background: #0f172a; color: #ffffff; padding: 20px 24px; }
+    .brand-tag { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #10b981; font-weight: 700; margin-bottom: 6px; }
+    .email-title { margin: 0; font-size: 20px; font-weight: 700; color: #ffffff; }
+    .email-meta { padding: 16px 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; line-height: 1.8; }
+    .meta-row { display: flex; gap: 8px; }
+    .meta-label { font-weight: 600; color: #64748b; min-width: 70px; }
+    .meta-val { color: #0f172a; word-break: break-all; }
+    .status-badge { display: inline-flex; align-items: center; gap: 4px; background: #ecfdf5; color: #059669; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .email-body { padding: 28px 24px; font-size: 15px; line-height: 1.6; color: #334155; min-height: 140px; }
+    .attachments-section { padding: 16px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+    .att-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
+    .att-item { display: inline-flex; align-items: center; gap: 6px; background: #ffffff; padding: 6px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; text-decoration: none; color: #0f172a; margin-right: 8px; margin-bottom: 6px; }
+    .footer { text-align: center; padding: 16px; font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="email-header">
+      <div class="brand-tag">ReachInbox Delivery Simulator (250 OK)</div>
+      <h1 class="email-title">${email.subject}</h1>
+    </div>
+    <div class="email-meta">
+      <div class="meta-row"><span class="meta-label">From:</span><span class="meta-val">${email.senderEmail}</span></div>
+      <div class="meta-row"><span class="meta-label">To:</span><span class="meta-val">${email.recipient}</span></div>
+      <div class="meta-row"><span class="meta-label">Date:</span><span class="meta-val">${formattedDate}</span></div>
+      <div class="meta-row"><span class="meta-label">Status:</span><span class="status-badge">✓ 250 OK Delivered via BullMQ Worker</span></div>
+      <div class="meta-row"><span class="meta-label">ID:</span><span class="meta-val">#${email.id}</span></div>
+    </div>
+    <div class="email-body">
+      ${renderedBody}
+    </div>
+    ${email.attachments && email.attachments.length > 0 ? `
+    <div class="attachments-section">
+      <div class="att-title">Attachments (${email.attachments.length})</div>
+      ${email.attachments.map((a: any) => `<a class="att-item" href="/api/emails/${email.id}/attachments/${a.id}" target="_blank">📎 ${a.originalName || a.filename} (${a.size ? Math.round(a.size/1024) + ' KB' : 'file'})</a>`).join('')}
+    </div>` : ''}
+  </div>
+  <div class="footer">Captured by ReachInbox Background Worker • Neon PostgreSQL • Upstash Redis Queue</div>
+</body>
+</html>`);
+  } catch (err: any) {
+    res.status(500).send(`Failed to render preview: ${err.message}`);
+  }
+};
+
 export const emailController = {
   scheduleEmail,
   scheduleBulkEmails,
@@ -503,6 +585,7 @@ export const emailController = {
   getEmailById,
   downloadAttachment,
   validateSchedulePayload,
+  previewEmailHtml,
 };
 
 export default emailController;

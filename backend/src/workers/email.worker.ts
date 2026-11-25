@@ -213,7 +213,10 @@ export const processEmailJob = async (job: Job<ScheduledEmailJobData>): Promise<
       try {
         const updated = await emailRepository.markEmailSent(emailId, {
           sentAt: new Date(),
-          etherealPreviewUrl: result.previewUrl,
+          etherealPreviewUrl:
+            result.previewUrl && result.previewUrl.includes('/message/')
+              ? result.previewUrl
+              : `/api/emails/${emailId}/preview`,
           claimToken,
         });
         if (updated) {

@@ -172,29 +172,26 @@ export const EmailDetail: React.FC<EmailDetailProps> = ({ email, onBack }) => {
             </span>
           </div>
 
-          {email.status === 'sent' && email.etherealPreviewUrl && (
+          {email.status === 'sent' && (
             <div className="delivery-details-box">
               <div className="preview-label">
-                <span className="preview-label-title">🧪 <strong>Simulated Delivery (Ethereal Sandbox)</strong></span>
-                <p className="preview-subtext">Captured in developer test webmail. Not delivered to external inbox.</p>
+                <span className="preview-label-title">🧪 <strong>Simulated Delivery (Webmail Sandbox)</strong></span>
+                <p className="preview-subtext">Captured in test webmail. Not delivered to external inbox.</p>
               </div>
               <a
-                href={email.etherealPreviewUrl}
+                href={
+                  email.etherealPreviewUrl && email.etherealPreviewUrl.includes('ethereal.email/message/')
+                    ? email.etherealPreviewUrl
+                    : `/api/emails/${email.id}/preview`
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="preview-link-btn"
               >
-                View in Ethereal Webmail ↗
+                {email.etherealPreviewUrl && email.etherealPreviewUrl.includes('ethereal.email/message/')
+                  ? 'View on Ethereal ↗'
+                  : 'View Webmail Preview ↗'}
               </a>
-            </div>
-          )}
-
-          {email.status === 'sent' && !email.etherealPreviewUrl && (
-            <div className="delivery-details-box">
-              <div className="preview-label">
-                <span className="preview-label-title">🚀 <strong>Production SMTP Delivery</strong></span>
-                <p className="preview-subtext">Accepted by configured external SMTP server (250 OK).</p>
-              </div>
             </div>
           )}
 

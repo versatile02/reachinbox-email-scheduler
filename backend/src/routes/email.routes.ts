@@ -7,6 +7,7 @@ import {
   listEmails,
   getEmailById,
   downloadAttachment,
+  previewEmailHtml,
 } from '../controllers/email.controller.js';
 import { optionalAuth } from '../middleware/auth.middleware.js';
 import { attachmentUpload } from '../middleware/upload.middleware.js';
@@ -27,6 +28,9 @@ router.post('/schedule', optionalAuth, attachmentUpload.array('attachments', 5),
 
 // Download attachment
 router.get('/:id/attachments/:attachmentId', optionalAuth, downloadAttachment);
+
+// Standalone webmail preview
+router.get('/:id/preview', optionalAuth, previewEmailHtml);
 
 // List emails with pagination and status/sender filtering
 router.get('/', optionalAuth, listEmails);

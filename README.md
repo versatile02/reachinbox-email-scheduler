@@ -4,24 +4,40 @@ ReachInbox is a distributed email scheduling service and interactive web dashboa
 
 ---
 
+## Live Public Deployment
+
+The complete application is deployed to production across Vercel and Railway:
+
+| Service | Public Production URL | Hosting Provider |
+| :--- | :--- | :--- |
+| **Frontend Dashboard** | **https://reachinbox-email-scheduler-flame-nu.vercel.app** | Vercel (Edge CDN) |
+| **Backend REST API** | **https://reachinbox-email-scheduler-production-a25f3632.up.railway.app** | Railway |
+| **API Health Check** | [https://reachinbox-email-scheduler-flame-nu.vercel.app/api/health](https://reachinbox-email-scheduler-flame-nu.vercel.app/api/health) | Railway via Vercel Proxy |
+| **Bull Board Queue UI** | [https://reachinbox-email-scheduler-flame-nu.vercel.app/admin/queues](https://reachinbox-email-scheduler-flame-nu.vercel.app/admin/queues) | Railway via Vercel Proxy |
+
+> **Evaluator / Demo Access:** Open the [Frontend Dashboard](https://reachinbox-email-scheduler-flame-nu.vercel.app) and click **"⚡ Instant Login as Oliver Brown (Demo)"** to immediately access the scheduling dashboard and queue administration without setting up third-party credentials.
+
+---
+
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Architecture & Workflow](#architecture--workflow)
-4. [Technology Stack](#technology-stack)
-5. [Prerequisites](#prerequisites)
-6. [Installation & Setup](#installation--setup)
-7. [Environment Configuration](#environment-configuration)
-8. [Running the Application](#running-the-application)
-9. [Demo Mode](#demo-mode)
-10. [Application Usage](#application-usage)
-11. [API Reference](#api-reference)
-12. [Testing](#testing)
-13. [Docker Infrastructure Setup](#docker-infrastructure-setup)
-14. [Operational Semantics & Reliability](#operational-semantics--reliability)
-15. [Known Limitations & Trade-offs](#known-limitations--trade-offs)
-16. [Project Structure](#project-structure)
+1. [Live Public Deployment](#live-public-deployment)
+2. [Overview](#overview)
+3. [Features](#features)
+4. [Architecture & Workflow](#architecture--workflow)
+5. [Technology Stack](#technology-stack)
+6. [Prerequisites](#prerequisites)
+7. [Installation & Setup](#installation--setup)
+8. [Environment Configuration](#environment-configuration)
+9. [Running the Application](#running-the-application)
+10. [Demo Mode](#demo-mode)
+11. [Application Usage](#application-usage)
+12. [API Reference](#api-reference)
+13. [Testing](#testing)
+14. [Docker Infrastructure Setup](#docker-infrastructure-setup)
+15. [Operational Semantics & Reliability](#operational-semantics--reliability)
+16. [Known Limitations & Trade-offs](#known-limitations--trade-offs)
+17. [Project Structure](#project-structure)
 
 ---
 

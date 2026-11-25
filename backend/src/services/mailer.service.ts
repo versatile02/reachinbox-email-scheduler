@@ -84,20 +84,21 @@ export const getTransporter = async (): Promise<Transporter> => {
       return transporter;
     }
 
-    // If explicit credentials are not configured
-    if (!authUser || !authPass) {
-      if (config.env === 'production') {
-        throw new Error(
-          'Production SMTP credentials are missing (SMTP_USER / SMTP_PASS). Ethereal test fallback is disabled in production.'
-        );
-      }
+    let smtpHost = config.smtp.host;
+    let smtpPort = config.smtp.port;
+    let smtpSecure = config.smtp.secure;
 
-      console.log('[Mailer] No SMTP credentials provided. Creating ephemeral Ethereal test account...');
+    // If explicit credentials are not configured, provision ephemeral Ethereal test account
+    if (!authUser || !authPass) {
+      console.log('[Mailer] No SMTP credentials provided. Creating ephemeral Ethereal test account for delivery & evaluation preview...');
       try {
         const testAccount = await nodemailer.createTestAccount();
         authUser = testAccount.user;
         authPass = testAccount.pass;
-        console.log(`[Mailer] Ethereal test account provisioned: ${authUser}`);
+        smtpHost = testAccount.smtp.host;
+        smtpPort = testAccount.smtp.port;
+        smtpSecure = testAccount.smtp.secure;
+        console.log(`[Mailer] Ethereal test account provisioned: ${authUser} via ${smtpHost}:${smtpPort}`);
       } catch (err: any) {
         console.error('[Mailer] Failed to create Ethereal test account:', err.message);
         throw new Error(`Unable to initialize email transport: ${err.message}`);
@@ -105,9 +106,9 @@ export const getTransporter = async (): Promise<Transporter> => {
     }
 
     const transporter = nodemailer.createTransport({
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: config.smtp.secure,
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
       auth: {
         user: authUser,
         pass: authPass,

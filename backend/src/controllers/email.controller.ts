@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import type { Request, Response } from 'express';
 import { emailRepository, EMAIL_STATUSES, DEFAULT_USER_ID } from '../models/email.repository.js';
-import { emailQueueService } from '../queues/email.queue.js';
+import { emailQueueService, emailQueue } from '../queues/email.queue.js';
 import { elasticsearchService } from '../services/elasticsearch.service.js';
 import { config } from '../config/index.js';
 
@@ -576,6 +576,36 @@ export const previewEmailHtml = async (req: Request, res: Response): Promise<voi
   }
 };
 
+/**
+ * DELETE /api/emails/:id
+ * Deletes an email and removes any active/delayed job from BullMQ.
+ */
+export const deleteEmailById = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    if (!id || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ error: 'Invalid email ID: must be a valid UUID' });
+    }
+
+    try {
+      const job = await emailQueue.getJob(id);
+      if (job) await job.remove();
+    } catch {}
+
+    const deleted = await emailRepository.deleteEmail(id, req.user?.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Email record not found or already deleted' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Email deleted successfully' });
+  } catch (err: any) {
+    console.error('[EmailController] Error deleting email:', err.message);
+    return res.status(500).json({ error: 'Failed to delete email', details: err.message });
+  }
+};
+
 export const emailController = {
   scheduleEmail,
   scheduleBulkEmails,
@@ -583,6 +613,7 @@ export const emailController = {
   reindexEmails,
   listEmails,
   getEmailById,
+  deleteEmailById,
   downloadAttachment,
   validateSchedulePayload,
   previewEmailHtml,

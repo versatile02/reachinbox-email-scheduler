@@ -189,6 +189,25 @@ export const App: React.FC = () => {
     );
   };
 
+  // Delete / cancel email handler
+  const handleDeleteEmail = async (emailId: string) => {
+    try {
+      await api.deleteEmail(emailId);
+      setEmails((prev) => prev.filter((e) => e.id !== emailId));
+      if (activeTab === 'scheduled') {
+        setScheduledCount((c) => Math.max(0, c - 1));
+      } else {
+        setSentCount((c) => Math.max(0, c - 1));
+      }
+      if (selectedEmail?.id === emailId) {
+        setSelectedEmail(null);
+        setCurrentView('list');
+      }
+    } catch (err: any) {
+      console.error('Failed to delete email:', err);
+    }
+  };
+
   // If initial auth check is in flight
   if (!authChecked) {
     return (
@@ -286,6 +305,7 @@ export const App: React.FC = () => {
                 setCurrentView('list');
                 setSelectedEmail(null);
               }}
+              onDeleteEmail={handleDeleteEmail}
             />
           ) : (
             <EmailList
@@ -300,6 +320,7 @@ export const App: React.FC = () => {
                 setCurrentView('detail');
               }}
               onToggleStar={handleToggleStar}
+              onDeleteEmail={handleDeleteEmail}
               onComposeClick={() => setCurrentView('compose')}
               onTabChange={(tab) => {
                 setActiveTab(tab);

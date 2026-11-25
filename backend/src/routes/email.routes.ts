@@ -6,6 +6,7 @@ import {
   reindexEmails,
   listEmails,
   getEmailById,
+  deleteEmailById,
   downloadAttachment,
   previewEmailHtml,
 } from '../controllers/email.controller.js';
@@ -37,5 +38,8 @@ router.get('/', optionalAuth, listEmails);
 
 // Get a single email by UUID
 router.get('/:id', optionalAuth, getEmailById);
+
+// Delete an email by UUID
+router.delete('/:id', optionalAuth, deleteEmailById);
 
 export default router;

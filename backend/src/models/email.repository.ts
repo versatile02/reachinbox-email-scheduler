@@ -898,6 +898,18 @@ export const verifyAndConsumeOAuthState = async (
   };
 };
 
+export const deleteEmail = async (id: string, userId?: string): Promise<boolean> => {
+  await query('DELETE FROM outbox_events WHERE email_id = $1;', [id]);
+  let sql = 'DELETE FROM emails WHERE id = $1';
+  const params: any[] = [id];
+  if (userId) {
+    sql += ' AND user_id = $2';
+    params.push(userId);
+  }
+  const res = await query(sql, params);
+  return (res.rowCount ?? 0) > 0;
+};
+
 export const emailRepository = {
   getUserById,
   getUserByEmail,
@@ -909,6 +921,7 @@ export const emailRepository = {
   createEmail,
   createEmailWithOutbox,
   getEmailById,
+  deleteEmail,
   listEmails,
   markEmailProcessing,
   touchEmailProcessing,

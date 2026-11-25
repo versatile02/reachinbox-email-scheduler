@@ -948,6 +948,29 @@
   color: #f59e0b;
 }
 
+.email-row-delete {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+
+.email-row-delete:hover {
+  color: #ef4444;
+  background-color: #fee2e2;
+}
+
+.detail-delete-btn:hover svg {
+  stroke: #dc2626 !important;
+}
+
 .email-list-loading,
 .email-list-empty {
   display: flex;

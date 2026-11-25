@@ -10,6 +10,7 @@ interface EmailListProps {
   sendersCount?: number;
   onSelectEmail: (email: Email) => void;
   onToggleStar: (emailId: string) => void;
+  onDeleteEmail?: (emailId: string) => void;
   onComposeClick: () => void;
   onTabChange?: (tab: 'scheduled' | 'sent') => void;
   onOpenSenders?: () => void;
@@ -24,6 +25,7 @@ export const EmailList: React.FC<EmailListProps> = ({
   sendersCount = 0,
   onSelectEmail,
   onToggleStar,
+  onDeleteEmail,
   onComposeClick,
   onTabChange: _onTabChange,
   onOpenSenders,
@@ -162,7 +164,7 @@ export const EmailList: React.FC<EmailListProps> = ({
               <span className="email-row-snippet"> - {getCleanSnippet(email.body)}</span>
             </div>
 
-            {/* Star icon matching Figma on far right */}
+            {/* Star icon matching Figma */}
             <button
               type="button"
               className={`email-row-star ${email.starred ? 'starred' : ''}`}
@@ -176,6 +178,27 @@ export const EmailList: React.FC<EmailListProps> = ({
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
               </svg>
             </button>
+
+            {/* Delete / Cancel button */}
+            {onDeleteEmail && (
+              <button
+                type="button"
+                className="email-row-delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm('Delete this email?')) {
+                    onDeleteEmail(email.id);
+                  }
+                }}
+                title="Delete email"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </button>
+            )}
           </div>
         );
       })}

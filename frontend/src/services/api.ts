@@ -108,6 +108,15 @@ export const api = {
     return data.data;
   },
 
+  async deleteEmail(id: string): Promise<{ success: boolean; message: string }> {
+    return handleResponse(
+      await fetch(`${BASE_URL}/emails/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+    );
+  },
+
   async scheduleEmail(payload: SchedulePayload, files?: File[]): Promise<Email> {
     if (files && files.length > 0) {
       const formData = new FormData();

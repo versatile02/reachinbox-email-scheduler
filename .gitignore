@@ -89,3 +89,4 @@ build/
 *.sln
 *.sw?
 Thumbs.db
+sample_leads/

@@ -311,6 +311,8 @@ export const createEmailWorker = (options: Partial<WorkerOptions> = {}): Worker<
   const worker = new Worker<ScheduledEmailJobData>(EMAIL_QUEUE_NAME, processEmailJob, {
     connection: connectionOptions as any,
     concurrency: config.rateLimit.workerConcurrency,
+    drainDelay: 5000, // Sleep 5000ms when queue is empty to avoid serverless Redis polling quota drain
+    stalledInterval: 60000, // Check for stalled jobs every 60s instead of default 30s
     ...options,
   });
 
